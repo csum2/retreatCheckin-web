@@ -89,7 +89,7 @@
 
                 // Now, list the cameras AFTER the scanner has started
                 QrScanner.listCameras(true).then(cameras => {
-                    const rearCamera = cameras.find(camera => camera.label.toLowerCase().includes('back') || camera.label.toLowerCase().includes('rear'));
+                    const rearCamera = cameras.find(camera => camera.label.toLowerCase().includes('environment') ||  camera.label.toLowerCase().includes('back') || camera.label.toLowerCase().includes('rear'));
                     if (rearCamera) {
                         // Set the rear camera once it's found
                         console.log("Rear camera found:", rearCamera.label);
