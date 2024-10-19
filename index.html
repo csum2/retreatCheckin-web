@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retreat Registration Check-in</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode/minified/html5-qrcode.min.js"></script>
+</head>
+<body>
+    <!-- Fullscreen loading indicator -->
+    <div id="loading-indicator" style="display: none;">
+        <div class="spinner"></div>
+    </div>
+    <div class="container">
+        <h1>Retreat Check-in</h1>
+        <div id="login-section">
+            <label for="staffname">Helper Name:</label>
+            <input type="text" id="staffname"><br>
+            <label for="password">Password:</label>
+            <input type="password" id="password"><br>
+            <button id="login-btn">Login</button>
+        </div>
+
+        <button id="logout-btn">Logout</button>
+
+        <div class="message-area" id="message-area">
+            <!-- Message from backend will be shown here -->
+        </div>
+
+        <div id="scanner-section">
+            <span>
+                <button id="start-btn" >Scan QR Code</button>
+                <button id="stop-btn" style="display: none">Stop Scan</button>
+            </span>
+            <p></p>
+            <div id="video-container">
+                <video id="qr-video" style="width: 80%; display: block; margin: 0 auto;"></video>
+            </div>
+            <div id="cam-qr-result" style="display: none"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import QrScanner from "../qr-scanner.min.js";
+
+        // Determine the environment
+        let baseUrl;
+        baseUrl = 'https://retreatreg-rest.fly.dev';
+
+        // Check if staff is already logged in
+        const savedStaffName = localStorage.getItem('staffname');
+        const savedPassword = localStorage.getItem('password');
+
+        if (savedStaffName && savedPassword) {
+            // Already logged in
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('scanner-section').style.display = 'block';
+            document.getElementById('message-area').style.display = 'block';
+            document.getElementById('logout-btn').style.display = 'block';
+        } else {
+            document.getElementById('login-section').style.display = 'block';
+            document.getElementById('scanner-section').style.display = 'none';
+            document.getElementById('message-area').style.display = 'none';
+            document.getElementById('logout-btn').style.display = 'none';
+        }
+
+        const messageArea = document.getElementById('message-area');
+        const video = document.getElementById('qr-video');
+        const camQrResult = document.getElementById('cam-qr-result');
+        const startButton = document.getElementById('start-btn');
+        const stopButton = document.getElementById('stop-btn');
+        
+        // StartScanner function
+        const startScanner = () => {
+            // First, start the scanner
+            scanner.start().then(() => {
+                console.log("Scanner started successfully!");
+                // Toggle buttons visibility after successful camera setup
+                startButton.style.display = 'none';
+                stopButton.style.display = 'block';
+                messageArea.innerText = '';
+
+                // Now, list the cameras AFTER the scanner has started
+                QrScanner.listCameras(true).then(cameras => {
+                    const rearCamera = cameras.find(camera => camera.label.toLowerCase().includes('back') || camera.label.toLowerCase().includes('rear'));
+                    if (rearCamera) {
+                        // Set the rear camera once it's found
+                        console.log("Rear camera found:", rearCamera.label);
+
+                        // Set the scanner to use the rear camera
+                        scanner.setCamera(rearCamera.id).then(() => {
+                            console.log("Using rear camera:", rearCamera.label);
+
+                        });
+                    } else {
+                        console.log("No rear camera found, using the default camera.");
+                    }
+                }).catch(err => {
+                    console.error("Error listing cameras:", err);
+                });
+            }).catch(err => {
+                console.error("Error starting the scanner:", err);
+            });
+        };
+
+        // StopScanner function
+        const stopScanner = () => {
+            scanner.stop();
+            startButton.style.display = 'block';
+            stopButton.style.display = 'none';
+            camQrResult.textContent = '';
+        };
+
+        async function fetchBackend(encryptedEmail) {
+            console.log('Fetching backend');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const staffName = localStorage.getItem('staffname');
+            const password = localStorage.getItem('password');
+
+            try {
+                // Show loading indicator
+                loadingIndicator.style.display = 'flex';
+
+                // Send decoded text to the server
+                const response = await fetch(`${baseUrl}/checkinQRcode`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ staffName, password, encryptedEmail })
+                })
+                const result = await response.json();
+                messageArea.innerText = result.message;
+            } catch (error) {
+                // Handle any error
+                Swal.fire('Error', 'Check-in failed!', 'error');
+            } finally {
+                // Hide loading indicator
+                loadingIndicator.style.display = 'none';
+            }
+        }
+
+        function setResult(label, result) {
+            stopScanner();
+            label.textContent = result.data;
+            label.style.color = 'teal';
+            clearTimeout(label.highlightTimeout);
+            label.highlightTimeout = setTimeout(() => label.style.color = 'inherit', 100);
+            fetchBackend(result.data);
+        }
+
+        // Initialize QR Scanner with rear camera
+        const scanner = new QrScanner(video, result => setResult(camQrResult, result), {
+            highlightScanRegion: true,
+            highlightCodeOutline: true,
+        });
+
+        // Start and stop buttons
+        startButton.addEventListener('click', startScanner);
+        stopButton.addEventListener('click', stopScanner);
+
+        // For debugging
+        window.scanner = scanner;
+
+        window.onload = () => {
+            const savedStaffName = localStorage.getItem('staffname');
+            const savedPassword = localStorage.getItem('password');
+
+            if (savedStaffName && savedPassword) {
+                document.getElementById('scanner-section').style.display = 'block';
+                document.getElementById('message-area').style.display = 'block';
+                document.getElementById('logout-btn').style.display = 'block';
+            }
+        };
+
+        // Login button logic
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            const staffname = document.getElementById('staffname').value;
+            const password = document.getElementById('password').value;
+
+            if (!staffname || !password) {
+                Swal.fire('Error', 'Staff name and password are required!', 'error');
+                return;
+            }
+
+            const loadingIndicator = document.getElementById('loading-indicator');
+            try {
+                loadingIndicator.style.display = 'flex';
+                const response = await fetch(`${baseUrl}/loginStaff`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ staffname, password })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('staffname', staffname);
+                    localStorage.setItem('password', password);
+
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('scanner-section').style.display = 'block';
+                    document.getElementById('message-area').style.display = 'block';
+                    document.getElementById('logout-btn').style.display = 'block';
+                    //startCameraPreview(); // Start the camera preview
+
+                    Swal.fire('Success', 'Login successful!', 'success');
+                } else {
+                    Swal.fire('Error', result.message, 'error');
+                }
+            } catch (error) {
+                Swal.fire('Error', 'Login failed!', 'error');
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        });
+
+        // Logout button logic
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            localStorage.removeItem('staffname');
+            localStorage.removeItem('password');
+
+            document.getElementById('login-section').style.display = 'block';
+            document.getElementById('scanner-section').style.display = 'none';
+            document.getElementById('message-area').style.display = 'none';
+            document.getElementById('logout-btn').style.display = 'none';
+
+            //stopCameraPreview(); // Stop the camera preview
+        });
+    </script>
+</body>
+</html>
